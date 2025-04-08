@@ -275,35 +275,3 @@ class MagicBricksAPI:
             return []
 
         return resp_data
-
-
-async def main():
-    async with MagicBricksAPI() as api:
-        try:
-            fp_props = await api.search(
-                city_code="6903", 
-                page=1,
-            )
-
-            print(f"Found {len(fp_props)} properties on page 1:")
-            for prop in fp_props[:3]:
-                print(f"  - {prop['Num_Bedroom']} BHK in {prop['Code_Locality']} for {prop['Price']} INR")
-
-            print("\nBatch searching pages 2-3 concurrently...")
-            batch_properties = await api.search_pages(
-                city_code="6903",
-                start_page=2,
-                end_page=3,
-                delay_between_requests=0.2
-            )
-            print(f"Found {len(batch_properties)} properties from pages 2-3.")
-
-        except aiohttp.ClientResponseError as e:
-            print(f"\nAPI Error: Status {e.status} - {e.message}")
-        except ValueError as e:
-            print(f"\nData Error: {e}")
-        except Exception as e:
-            print(f"\nAn unexpected error occurred: {e}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
