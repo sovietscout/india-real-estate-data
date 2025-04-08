@@ -56,7 +56,7 @@ class Property(dict):
         self['Num_Balcony'] = self.parse(data.get('noBfCt'), int)
         self['Num_Bathroom'] = self.parse(data.get('bathD'), int)
         self['Num_Parking'] = self.parse(
-            data.get('parkingD'), lambda x: int(x.split(' ')[0]) if x else None
+            data.get('parkingD'), lambda x: int(x.split(' ')[0]) if x else 0
         )
 
         self['Code_Amenities'] = self.parse(data.get('amenities'), lambda x: x.split(' '))

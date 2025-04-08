@@ -3,10 +3,16 @@ import asyncio
 import aiohttp
 from magicbricks_api import MagicBricksAPI
 from pymongo import MongoClient
-import pandas as pd
+#import pandas as pd
 
 
-async def main(collection):
+async def main():
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client['india-real-estate']
+
+    collection = db['properties']
+    #locations_collection = db['locations']
+
     async with MagicBricksAPI() as api:
         tic = time.perf_counter()
 
@@ -17,7 +23,7 @@ async def main(collection):
             print(f"Inserted {len(prop_data)} listings into MongoDB.")
 
             """
-            # Pandas/CSV implementation (make sure to import pandas)
+            # Pandas/CSV implementation
             df = pd.DataFrame(prop_data)
             df.to_csv("properties.csv", index=False)
 
@@ -36,10 +42,4 @@ async def main(collection):
 
 
 if __name__ == "__main__":
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['india-real-estate']
-
-    properties_collection = db['properties']
-    locations_collection = db['locations']
-
-    asyncio.run(main(properties_collection))
+    asyncio.run(main())
