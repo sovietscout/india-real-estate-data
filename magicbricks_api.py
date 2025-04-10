@@ -16,6 +16,15 @@ class Property(dict):
             return None
 
         return parser(value)
+
+    @staticmethod
+    def _handle_flooring(floor_input: Union[str, None]) -> Union[List[str], None]:
+        if floor_input is None:
+            return None
+        elif isinstance(floor_input, str):
+            return [i.strip() for i in floor_input.replace('Tiles', '').split(',')]
+        else:
+            raise ValueError(f"Unknown flooring designation: {floor_input}")
     
     @staticmethod
     def _handle_parking(parking_input: Union[str, None]) -> int:
@@ -73,6 +82,7 @@ class Property(dict):
         self['Num_Balcony'] = self._parse(data.get('noBfCt'), int)
         self['Num_Bathroom'] = self._parse(data.get('bathD'), int)
         self['Num_Parking'] = self._handle_parking(data.get('parkingD'))
+        self['Type_Flooring'] = self._handle_flooring(data.get('flooringTyD'))
 
         self['Code_Amenities'] = self._parse(data.get('amenities'), lambda x: x.split(' '))
         self['Name_Landmarks'] = self._parse(
@@ -87,7 +97,7 @@ class Property(dict):
         #self['Is_Prime_Location'] = self.parse(data.get('isPrimeLocProp'), lambda x: int(x == 'Y'))
 
         self['Time_Scraped'] = int(time.time())
-        self['Time_Post'] = int(data.get('pd') / 1000) 
+        self['Time_Posted'] = int(data.get('pd') / 1000) 
 
         #self['URL'] = data.get('newUrl')
 
