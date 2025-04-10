@@ -112,7 +112,6 @@ class MagicBricksAPI:
         self._connector = connector
         self._session: Optional[aiohttp.ClientSession] = None
 
-
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
             log.info("Creating new aiohttp ClientSession.")
@@ -236,25 +235,32 @@ class MagicBricksAPI:
         end_page: int,
         property_types: Optional[List[str]] = None,
         bedrooms: Optional[List[str]] = None,
-        delay_between_requests: float = 0.1,
+        max_concurrent: int = 10,
         **kwargs: Any
     ) -> List[Property]:
         if start_page > end_page:
             raise ValueError("start_page must be less than or equal to end_page")
-
+        
         tasks = []
-        log.info(f"Starting batch search for city {city_code}, pages {start_page} to {end_page}")
+        semaphore = asyncio.Semaphore(max_concurrent)
+
         for page_num in range(start_page, end_page + 1):
-            task = self.search(
-                city_code=city_code,
-                page=page_num,
-                property_types=property_types,
-                bedrooms=bedrooms,
-                **kwargs
-            )
-            tasks.append(task)
-            if delay_between_requests > 0:
-                await asyncio.sleep(delay_between_requests)
+            async def task(
+                pn=page_num,
+                cc=city_code,
+                pts=property_types,
+                br=bedrooms,
+                kw=kwargs
+            ):
+                async with semaphore:
+                    return await self.search(
+                        city_code=cc,
+                        page=pn,
+                        property_types=pts,
+                        bedrooms=br,
+                        **kw
+                    )
+            tasks.append(task())
 
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
