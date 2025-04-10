@@ -11,14 +11,27 @@ log = logging.getLogger(__name__)
 
 class Property(dict):
     @staticmethod
-    def parse(value: any, parser: Callable = lambda x: x) -> Union[any, None]:
+    def _parse(value: any, parser: Callable = lambda x: x) -> Union[any, None]:
         if value is None:
             return None
 
         return parser(value)
     
     @staticmethod
-    def parse_floor_number(floor_input: Union[str, int, None]) -> Union[int, None]:
+    def _handle_parking(parking_input: Union[str, None]) -> int:
+        if parking_input is None:
+            return 0
+        elif isinstance(parking_input, str):
+            try:
+                return sum([int(i.split()[0]) for i in parking_input.split(',')])
+            except ValueError:
+                raise ValueError(f"Unknown parking designation: {parking_input}")
+        else:
+            raise ValueError(f"Unknown parking designation: {parking_input}")
+
+    
+    @staticmethod
+    def _handle_floor(floor_input: Union[str, int, None]) -> Union[int, None]:
         if floor_input is None:
             return None
         elif isinstance(floor_input, int):
@@ -40,42 +53,42 @@ class Property(dict):
         #self['Name_Project'] = data.get('prjname')
         #self['Name_Developer'] = data.get('companyname')
 
-        self['Latitude'] = self.parse(data.get('pmtLat'), float)
-        self['Longitude'] = self.parse(data.get('pmtLong'), float)
+        self['Latitude'] = self._parse(data.get('pmtLat'), float)
+        self['Longitude'] = self._parse(data.get('pmtLong'), float)
 
-        self['Code_City'] = self.parse(data.get('ct'), str)
-        self['Code_Locality'] = self.parse(data.get('lt'), str)
+        self['Code_City'] = self._parse(data.get('ct'), str)
+        self['Code_Locality'] = self._parse(data.get('lt'), str)
 
-        self['Price'] = self.parse(data.get('price'), int)
-        self['Price_SqFt'] = self.parse(data.get('sqFtPrD'), int)
-        self['Area_SqFt'] = self.parse(data.get('ca'), int)
+        self['Price'] = self._parse(data.get('price'), int)
+        self['Price_SqFt'] = self._parse(data.get('sqFtPrD'), int)
+        self['Area_SqFt'] = self._parse(data.get('ca'), int)
 
-        self['Num_Bedroom'] = self.parse(data.get('bedroomD'), int)
-        self['Num_Floor'] = self.parse_floor_number(data.get('floorNo'))
-        self['Num_Floor_Total'] = self.parse(data.get('floors'), int)
-        self['Num_Balcony'] = self.parse(data.get('noBfCt'), int)
-        self['Num_Bathroom'] = self.parse(data.get('bathD'), int)
-        self['Num_Parking'] = self.parse(
-            data.get('parkingD'), lambda x: int(x.split(' ')[0]) if x else 0
-        )
+        self['Code_Age_Construction'] = self._parse(data.get('ac'), str)
+        self['Code_Possession_Status'] = self._parse(data.get('ps'), str)
 
-        self['Code_Amenities'] = self.parse(data.get('amenities'), lambda x: x.split(' '))
-        self['Code_Landmarks'] = self.parse(
-            data.get('landmarkDetails'), lambda x: [item.split('|')[0] for item in x if item]
-        )
-        self['Name_Landmarks'] = self.parse(
+        self['Num_Bedroom'] = self._parse(data.get('bedroomD'), int)
+        self['Num_Floor'] = self._handle_floor(data.get('floorNo'))
+        self['Num_Floor_Total'] = self._parse(data.get('floors'), int)
+        self['Num_Balcony'] = self._parse(data.get('noBfCt'), int)
+        self['Num_Bathroom'] = self._parse(data.get('bathD'), int)
+        self['Num_Parking'] = self._handle_parking(data.get('parkingD'))
+
+        self['Code_Amenities'] = self._parse(data.get('amenities'), lambda x: x.split(' '))
+        self['Name_Landmarks'] = self._parse(
             data.get('landmarkDetails'), lambda x: [item.split('|')[1] for item in x if item]
         )
-        self['Property_Type'] = data.get('propTypeD')
+        self['Type_Property'] = data.get('propTypeD')
+        self['Type_Transaction'] = data.get('transactionTypeD')
 
-        self['Status_Possession'] = data.get('possStatusD')
         self['Status_Furnished'] = data.get('furnishedD')
 
         #self['Is_Luxury'] = self.parse(data.get('isLuxury'), lambda x: int(x != 'F'))
         #self['Is_Prime_Location'] = self.parse(data.get('isPrimeLocProp'), lambda x: int(x == 'Y'))
 
-        self['Time_Scraped'] = int(time.time() * 1000)
-        self['Time_Post'] = data.get('pd')
+        self['Time_Scraped'] = int(time.time())
+        self['Time_Post'] = int(data.get('pd') / 1000) 
+
+        #self['URL'] = data.get('newUrl')
 
     def __repr__(self):
         return f"<Property id={self['_id']} city='{self['Code_City']}' price='{self['Price']}' area='{self['Area_SqFt']}' sqFtPrice='{self['Price_SqFt']}' bedrooms='{self['Num_Bedroom']}' floor='{self['Num_Floor']}' totalFloors='{self['Num_Floor_Total']}'>"

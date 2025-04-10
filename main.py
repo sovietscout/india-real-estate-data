@@ -2,33 +2,21 @@ import time
 import asyncio
 import aiohttp
 from magicbricks_api import MagicBricksAPI
-from pymongo import MongoClient
-#import pandas as pd
+import pandas as pd
 
 
 async def main():
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client['india-real-estate']
-
-    collection = db['properties']
-    #locations_collection = db['locations']
-
     async with MagicBricksAPI() as api:
         tic = time.perf_counter()
+        city_id = "6903"
 
         try:
-            prop_data = await api.search_pages(city_code="6903", start_page=1, end_page=50)
+            prop_data = await api.search_pages(city_code=city_id, start_page=1, end_page=50)
 
-            collection.insert_many(prop_data)
-            print(f"Inserted {len(prop_data)} listings into MongoDB.")
-
-            """
-            # Pandas/CSV implementation
             df = pd.DataFrame(prop_data)
-            df.to_csv("properties.csv", index=False)
+            df.to_csv(f"properties-{city_id}.csv", index=False)
 
-            print(f"Fetched {len(prop_data)} listings in Kolkata.")
-            """
+            print(f"Fetched {len(prop_data)} listings in City {city_id}.")
 
         except aiohttp.ClientResponseError as e:
             print(f"\nAPI Error: Status {e.status} - {e.message}")
