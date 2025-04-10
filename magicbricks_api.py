@@ -58,7 +58,8 @@ class Property(dict):
 
         self['Code_City'] = self._parse(data.get('ct'), str)
         self['Code_Locality'] = self._parse(data.get('lt'), str)
-
+        self['Name_Locality'] = self._parse(data.get('lmtDName'), str)
+        
         self['Price'] = self._parse(data.get('price'), int)
         self['Price_SqFt'] = self._parse(data.get('sqFtPrD'), int)
         self['Area_SqFt'] = self._parse(data.get('ca'), int)
