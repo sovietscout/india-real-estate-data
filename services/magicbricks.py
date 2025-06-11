@@ -9,13 +9,25 @@ logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger(__name__)
 
 
-class Property(dict):
+class MagicBricksProperty(dict):
     @staticmethod
     def _parse(value: any, parser: Callable = lambda x: x) -> Union[any, None]:
         if value is None:
             return None
 
         return parser(value)
+
+    @staticmethod
+    def _handle_rooms(room_input: Union[str, None]) -> int:
+        if room_input is None:
+            return 0
+        elif isinstance(room_input, str):
+            try:
+                b = int(room_input)
+            except ValueError:
+                b = 10  # Default to 10+ if parsing fails ('> 10')
+            
+            return b
 
     @staticmethod
     def _handle_flooring(floor_input: Union[str, None]) -> Union[List[str], None]:
@@ -58,7 +70,7 @@ class Property(dict):
                 raise ValueError(f"Unknown floor designation: {floor_input}")
         
     def __init__(self, data: Dict):
-        self['_id'] = data.get('id')
+        self['_id'] = f"mbr-{data.get('id')}"
         #self['Name_Project'] = data.get('prjname')
         #self['Name_Developer'] = data.get('companyname')
 
@@ -76,11 +88,11 @@ class Property(dict):
         self['Code_Age_Construction'] = self._parse(data.get('ac'), str)
         self['Code_Possession_Status'] = self._parse(data.get('ps'), str)
 
-        self['Num_Bedroom'] = self._parse(data.get('bedroomD'), int)
+        self['Num_Bedroom'] = self._handle_rooms(data.get('bedroomD'))
         self['Num_Floor'] = self._handle_floor(data.get('floorNo'))
         self['Num_Floor_Total'] = self._parse(data.get('floors'), int)
         self['Num_Balcony'] = self._parse(data.get('noBfCt'), int)
-        self['Num_Bathroom'] = self._parse(data.get('bathD'), int)
+        self['Num_Bathroom'] = self._handle_rooms(data.get('bathD'))
         self['Num_Parking'] = self._handle_parking(data.get('parkingD'))
         self['Type_Flooring'] = self._handle_flooring(data.get('flooringTyD'))
 
@@ -97,7 +109,7 @@ class Property(dict):
         #self['Is_Prime_Location'] = self.parse(data.get('isPrimeLocProp'), lambda x: int(x == 'Y'))
 
         self['Time_Scraped'] = int(time.time())
-        self['Time_Posted'] = int(data.get('pd') / 1000) 
+        self['Time_Posted'] = int(data.get('pd') / 1000)
 
         #self['URL'] = data.get('newUrl')
 
@@ -146,7 +158,7 @@ class MagicBricksAPI:
                 headers=headers,
                 cookie_jar=cookie_jar,
                 connector=self._connector,
-                timeout=aiohttp.ClientTimeout(total=60)
+                timeout=aiohttp.ClientTimeout(total=5)
             )
 
             log.info("Session created with headers and initial cookies.")
@@ -190,24 +202,12 @@ class MagicBricksAPI:
             log.error(f"An unexpected error occurred during request: {e}", exc_info=True)
             raise
 
-    async def search(
-        self,
-        city_code: str,
-        page: int = 1,
-        property_types: Optional[List[str]] = None,
-        bedrooms: Optional[List[str]] = None,
-        **kwargs: Any
-    ) -> List[Property]:
-        if property_types is None:
-            property_types = ["10002", "10003", "10021", "10022", "10001", "10017"] # Removed 10000 (Plot?)
-        if bedrooms is None:
-            bedrooms = ["11701", "11702", "11700", "11703", "11704", "11705", "11706"] # 1, 2, 3, 4, 5, 6+
-
+    async def search_page(self, city_code: str, page: int = 1, **kwargs: Any) -> Union[List[MagicBricksProperty], int]:
         params = {
             "editSearch": "Y",
             "category": "S", # S = Sale, R = Rent
-            "propertyType": ",".join(property_types),
-            "bedrooms": ",".join(bedrooms),
+            "propertyType": "10002,10003,10021,10022,10001,10017", # Removed 10000 (Plot?)
+            "bedrooms": "11700,11701,11702,11703,11704,11705,11706,11707,11708,11709,11710", # 1, 2, 3, 4, 5, 5+
             "city": city_code,
             "page": str(page),
             "sortBy": "postRecency",
@@ -225,60 +225,52 @@ class MagicBricksAPI:
         if "resultList" not in resp_data or not isinstance(resp_data["resultList"], list):
              log.warning(f"Unexpected response structure from search API: 'resultList' missing or not a list. Keys: {resp_data.keys()}")
              return []
-
-        return [Property(data) for data in resp_data["resultList"]]
-
-    async def search_pages(
-        self,
-        city_code: str,
-        start_page: int,
-        end_page: int,
-        property_types: Optional[List[str]] = None,
-        bedrooms: Optional[List[str]] = None,
-        max_concurrent: int = 10,
-        **kwargs: Any
-    ) -> List[Property]:
-        if start_page > end_page:
-            raise ValueError("start_page must be less than or equal to end_page")
         
+        result_count: int = resp_data["editAdditionalDataBean"].get("resultCount", 0)
+        result_per_page: int = resp_data["editAdditionalDataBean"].get("resultPerPageCount", 30)
+        total_pages = (result_count + result_per_page - 1) // result_per_page
+
+        return [MagicBricksProperty(data) for data in resp_data["resultList"]], total_pages
+    
+    async def search(self, city_code: str, max_concurrent: int = 10, **kwargs: Any) -> List[MagicBricksProperty]:
+        """
+        Search properties in a specific city with optional filters.
+        
+        :param city_code: The code of the city to search in.
+        :param kwargs: Additional search parameters.
+        :return: A list of Property objects.
+        """
+
+        _, total_pages = await self.search_page(city_code=city_code, page=1, **kwargs)
+        log.info(f"Total pages to fetch for city {city_code}: {total_pages}")
+
         tasks = []
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        for page_num in range(start_page, end_page + 1):
-            async def task(
-                pn=page_num,
-                cc=city_code,
-                pts=property_types,
-                br=bedrooms,
-                kw=kwargs
-            ):
+        for page in range(1, total_pages + 1):
+            async def task(pn=page, cc=city_code):
                 async with semaphore:
-                    return await self.search(
-                        city_code=cc,
-                        page=pn,
-                        property_types=pts,
-                        bedrooms=br,
-                        **kw
-                    )
+                    data, _ = await self.search_page(city_code=cc, page=pn)
+                    return data
+
             tasks.append(task())
 
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
+        all_properties: List[MagicBricksProperty] = []
 
-        all_properties: List[Property] = []
         for i, result in enumerate(results_list):
-            page = start_page + i
+            page = i + 1
 
             if isinstance(result, Exception):
                 log.error(f"Failed to fetch page {page} for city {city_code}: {result}")
-            
             elif isinstance(result, list):
                 log.info(f"Successfully fetched {len(result)} properties from page {page}")
                 all_properties.extend(result)
-            
             else:
                 log.warning(f"Unexpected result type for page {page}: {type(result)}")
-
-        log.info(f"Batch search complete. Total properties fetched: {len(all_properties)}")
+            
+        log.info(f"Search complete. Total properties fetched: {len(all_properties)}")
+        
         return all_properties
 
     async def property_count(self, city_code: str) -> Dict[str, int]:
