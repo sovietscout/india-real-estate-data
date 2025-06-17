@@ -5,6 +5,8 @@ from http.cookies import SimpleCookie
 import time
 import logging
 
+import pandas as pd
+
 logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger(__name__)
 
@@ -78,15 +80,17 @@ class MagicBricksProperty(dict):
         self['Longitude'] = self._parse(data.get('pmtLong'), float)
 
         self['Code_City'] = self._parse(data.get('ct'), str)
+        self['Name_City'] = self._parse(data.get('ctName'), str)
         self['Code_Locality'] = self._parse(data.get('lt'), str)
-        self['Name_Locality'] = self._parse(data.get('lmtDName'), str)
+        self['Namge_Locality'] = self._parse(data.get('lmtDName'), str)
         
         self['Price'] = self._parse(data.get('price'), int)
         self['Price_SqFt'] = self._parse(data.get('sqFtPrD'), int)
         self['Area_SqFt'] = self._parse(data.get('ca'), int)
 
-        self['Code_Age_Construction'] = self._parse(data.get('ac'), str)
-        self['Code_Possession_Status'] = self._parse(data.get('ps'), str)
+        self['Status_Age_Construction'] = self._parse(data.get('acD'), str)
+        self['Status_Possession_Status'] = self._parse(data.get('possStatusD'), str)
+        self['Status_Furnished'] = data.get('furnishedD')
 
         self['Num_Bedroom'] = self._handle_rooms(data.get('bedroomD'))
         self['Num_Floor'] = self._handle_floor(data.get('floorNo'))
@@ -103,8 +107,6 @@ class MagicBricksProperty(dict):
         self['Type_Property'] = data.get('propTypeD')
         self['Type_Transaction'] = data.get('transactionTypeD')
 
-        self['Status_Furnished'] = data.get('furnishedD')
-
         #self['Is_Luxury'] = self.parse(data.get('isLuxury'), lambda x: int(x != 'F'))
         #self['Is_Prime_Location'] = self.parse(data.get('isPrimeLocProp'), lambda x: int(x == 'Y'))
 
@@ -117,7 +119,7 @@ class MagicBricksProperty(dict):
         return f"<Property id={self['_id']} city='{self['Code_City']}' price='{self['Price']}' area='{self['Area_SqFt']}' sqFtPrice='{self['Price_SqFt']}' bedrooms='{self['Num_Bedroom']}' floor='{self['Num_Floor']}' totalFloors='{self['Num_Floor_Total']}'>"
 
 
-class MagicBricksAPI:
+class MagicBricksService:
     BASE_URL = "https://www.magicbricks.com"
 
     def __init__(self, connector: Optional[aiohttp.TCPConnector] = None):
@@ -202,7 +204,7 @@ class MagicBricksAPI:
             log.error(f"An unexpected error occurred during request: {e}", exc_info=True)
             raise
 
-    async def search_page(self, city_code: str, page: int = 1, **kwargs: Any) -> Union[List[MagicBricksProperty], int]:
+    async def search_page(self, city_code: str, page: int = 1, **kwargs: Any) -> List[MagicBricksProperty]:
         params = {
             "editSearch": "Y",
             "category": "S", # S = Sale, R = Rent
@@ -226,13 +228,13 @@ class MagicBricksAPI:
              log.warning(f"Unexpected response structure from search API: 'resultList' missing or not a list. Keys: {resp_data.keys()}")
              return []
         
-        result_count: int = resp_data["editAdditionalDataBean"].get("resultCount", 0)
-        result_per_page: int = resp_data["editAdditionalDataBean"].get("resultPerPageCount", 30)
-        total_pages = (result_count + result_per_page - 1) // result_per_page
+        self.result_count: int = resp_data["editAdditionalDataBean"].get("resultCount", 0)
+        self.result_per_page: int = resp_data["editAdditionalDataBean"].get("resultPerPageCount", 30)
 
-        return [MagicBricksProperty(data) for data in resp_data["resultList"]], total_pages
+        log.info(f"Found {self.result_count} properties on page {page} for city {city_code}.")
+        return [MagicBricksProperty(data) for data in resp_data["resultList"]]
     
-    async def search(self, city_code: str, max_concurrent: int = 10, **kwargs: Any) -> List[MagicBricksProperty]:
+    async def search(self, city_code: str, max_concurrent: int = 25, **kwargs: Any) -> List[MagicBricksProperty]:
         """
         Search properties in a specific city with optional filters.
         
@@ -241,13 +243,14 @@ class MagicBricksAPI:
         :return: A list of Property objects.
         """
 
-        _, total_pages = await self.search_page(city_code=city_code, page=1, **kwargs)
-        log.info(f"Total pages to fetch for city {city_code}: {total_pages}")
+        page_one = await self.search_page(city_code=city_code, page=1, **kwargs)
+        result_pages = (self.result_count + self.result_per_page - 1) // self.result_per_page
+        log.info(f"Total pages to fetch for city {city_code}: {result_pages}")
 
         tasks = []
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        for page in range(1, total_pages + 1):
+        for page in range(1, result_pages + 1):
             async def task(pn=page, cc=city_code):
                 async with semaphore:
                     data, _ = await self.search_page(city_code=cc, page=pn)
@@ -256,7 +259,7 @@ class MagicBricksAPI:
             tasks.append(task())
 
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
-        all_properties: List[MagicBricksProperty] = []
+        all_properties = page_one.copy() if page_one else []
 
         for i, result in enumerate(results_list):
             page = i + 1
@@ -297,3 +300,13 @@ class MagicBricksAPI:
             return []
 
         return resp_data
+
+if __name__ == "__main__":
+    async def main():
+        service = MagicBricksService()
+        prop_data = await service.search("6903")
+
+        df = pd.DataFrame(prop_data)
+        df.to_csv(f"output/nnnacres-{int(time.time())}.csv", index=False)
+
+    asyncio.run(main())
