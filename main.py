@@ -2,8 +2,8 @@ import time
 import asyncio
 import aiohttp
 import pandas as pd
-from services.magicbricks import MagicBricksAPI
-# from services.magicbricks import MagicBricksService
+from services.magicbricks import MagicBricksService
+# from sites.magicbricks import MagicBricksService
 
 """
 async def main():
@@ -43,9 +43,9 @@ async def main():
 """
 
 async def main():
-    async with MagicBricksAPI() as api:
+    async with MagicBricksService() as api:
         tic = time.perf_counter()
-        city_id = "6903"
+        city_id = "2395"
 
         try:
             prop_data = await api.search(city_code=city_id)
